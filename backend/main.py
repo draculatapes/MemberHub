@@ -108,9 +108,11 @@ class MemberTier(BaseModel):
     duration_days: int
 
 class Payment(BaseModel):
+    member_id: Optional[str] = None
     amount: float
     tier: str
     payment_method: str
+    status: Optional[str] = "completed"
     transaction_id: str
 
 class Certificate(BaseModel):
@@ -450,10 +452,55 @@ async def get_member(member_id: str, token_data: dict = Depends(verify_token)):
 
 @app.get("/api/members")
 async def list_members(token_data: dict = Depends(verify_token)):
-    """List all members for current user"""
-    user_id = token_data["user_id"]
-    members = await db.members.find({"user_id": user_id}).to_list(100)
+    """List all members — admin sees all, user sees own"""
+    if token_data["role"] == "admin":
+        members = await db.members.find({}).to_list(200)
+    else:
+        members = await db.members.find({"user_id": token_data["user_id"]}).to_list(100)
     return [{"member_id": str(m["_id"]), **{k: v for k, v in m.items() if k != "_id"}} for m in members]
+
+
+@app.post("/api/admin/add-member")
+async def admin_add_member(member: UserRegister, tier: str = "basic", token_data: dict = Depends(verify_admin)):
+    """Admin manually adds a member — creates user (approved) + member record"""
+    # Check if email already exists
+    existing = await db.users.find_one({"email": member.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user account with 'approved' status
+    user_doc = {
+        "email": member.email,
+        "password": hash_password(member.password),
+        "name": member.name,
+        "phone": member.phone,
+        "organization": member.organization,
+        "role": "user",
+        "status": "approved",
+        "tier": tier,
+        "created_at": datetime.utcnow(),
+        "is_admin": False
+    }
+    user_result = await db.users.insert_one(user_doc)
+    user_id = str(user_result.inserted_id)
+    
+    # Create member record
+    member_doc = {
+        "user_id": user_id,
+        "name": member.name,
+        "email": member.email,
+        "phone": member.phone,
+        "tier": tier,
+        "organization": member.organization,
+        "status": "active",
+        "joined_date": datetime.utcnow(),
+        "tier_expiry_date": datetime.utcnow() + timedelta(days=30),
+        "certificate_issued": False,
+        "created_at": datetime.utcnow()
+    }
+    await db.members.insert_one(member_doc)
+    
+    return {"message": f"Member {member.name} added and can login immediately", "user_id": user_id}
 
 # ============ Payment Routes ============
 

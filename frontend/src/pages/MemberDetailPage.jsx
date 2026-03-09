@@ -104,7 +104,7 @@ function MemberDetailPage() {
         </div>
 
         <div className="member-actions">
-          <button 
+          <button
             className="btn-primary"
             onClick={handleGenerateCertificate}
             disabled={member.certificate_issued}
@@ -112,12 +112,7 @@ function MemberDetailPage() {
             {member.certificate_issued ? 'Certificate Issued' : 'Generate Certificate'}
           </button>
 
-          <button 
-            className="btn-secondary"
-            onClick={() => navigate(`/payment/${member.member_id}`)}
-          >
-            Make Payment
-          </button>
+
 
           <div className="upgrade-tier">
             <label>Upgrade Tier:</label>
