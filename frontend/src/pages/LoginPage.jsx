@@ -23,6 +23,9 @@ function LoginPage({ setIsAuthenticated }) {
 
       localStorage.setItem('access_token', response.data.access_token);
       localStorage.setItem('refresh_token', response.data.refresh_token);
+      localStorage.setItem('user_role', response.data.role);
+      localStorage.setItem('user_status', response.data.status);
+      localStorage.setItem('user_name', response.data.name);
 
       setIsAuthenticated(true);
       navigate('/dashboard');
@@ -65,7 +68,7 @@ function LoginPage({ setIsAuthenticated }) {
           </div>
 
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 

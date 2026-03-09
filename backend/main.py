@@ -10,11 +10,12 @@ from typing import Optional, List
 import os
 from dotenv import load_dotenv
 import certifi
+from bson import ObjectId
 
 load_dotenv()
 
 # Initialize FastAPI app
-app = FastAPI(title="MemberHub API", version="1.0.0", description="Membership Management & Certificate Generation")
+app = FastAPI(title="MemberHub API", version="2.0.0", description="Membership Management & Certificate Generation")
 
 # CORS Configuration
 app.add_middleware(
@@ -33,16 +34,38 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
+# Admin credentials (used for seeding)
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@memberhub.com")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123456")
+
 client: Optional[AsyncIOMotorClient] = None
 db: Optional[AsyncIOMotorDatabase] = None
 
 # ============ Startup & Shutdown ============
+
 @app.on_event("startup")
 async def startup():
     global client, db
     client = AsyncIOMotorClient(MONGO_URL, tlsCAFile=certifi.where())
     db = client[DATABASE_NAME]
     print("✓ Connected to MongoDB")
+    
+    # Seed admin user if not exists
+    admin = await db.users.find_one({"email": ADMIN_EMAIL})
+    if not admin:
+        admin_doc = {
+            "email": ADMIN_EMAIL,
+            "password": hash_password(ADMIN_PASSWORD),
+            "name": "Admin",
+            "role": "admin",
+            "status": "approved",
+            "created_at": datetime.utcnow(),
+            "is_admin": True
+        }
+        await db.users.insert_one(admin_doc)
+        print(f"✓ Admin user seeded: {ADMIN_EMAIL}")
+    else:
+        print(f"✓ Admin user exists: {ADMIN_EMAIL}")
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -56,6 +79,8 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     name: str
+    phone: Optional[str] = None
+    organization: Optional[str] = None
     
     @validator('password')
     def password_valid(cls, v):
@@ -71,42 +96,23 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    role: str
+    status: str
+    name: str
 
 class MemberTier(BaseModel):
     tier_id: str
-    name: str  # Basic, Premium, Gold
+    name: str
     price: float
     benefits: List[str]
     duration_days: int
 
-# class MemberCreate(BaseModel):
-#     user_id: str
-#     name: str
-#     email: EmailStr
-#     phone: Optional[str] = None
-#     tier: str  # basic, premium, gold
-#     organization: Optional[str] = None
-class MemberCreate(BaseModel):
-    user_id: Optional[str] = None
-    name: str
-    email: EmailStr
-    phone: Optional[str] = None
-    tier: str
-    organization: Optional[str] = None
-
-class Member(MemberCreate):
-    member_id: str
-    status: str  # active, inactive, suspended
-    joined_date: datetime
-    certificate_url: Optional[str] = None
-    tier_expiry_date: datetime
-
 class Payment(BaseModel):
-    member_id: str
+    member_id: Optional[str] = None
     amount: float
     tier: str
-    payment_method: str  # stripe, razorpay, bank_transfer
-    status: str  # pending, completed, failed
+    payment_method: str
+    status: Optional[str] = "completed"
     transaction_id: str
 
 class Certificate(BaseModel):
@@ -125,40 +131,47 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
-def create_access_token(user_id: str, expires_delta: Optional[timedelta] = None):
+def create_access_token(user_id: str, role: str, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    payload = {"sub": user_id, "exp": expire}
-    encoded_jwt = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return encoded_jwt
+    payload = {"sub": user_id, "role": role, "exp": expire}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-def create_refresh_token(user_id: str):
+def create_refresh_token(user_id: str, role: str):
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": user_id, "exp": expire, "type": "refresh"}
-    encoded_jwt = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-    return encoded_jwt
+    payload = {"sub": user_id, "role": role, "exp": expire, "type": "refresh"}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())) -> str:
+async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())) -> dict:
+    """Returns dict with user_id and role"""
     token = credentials.credentials
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
+        role = payload.get("role", "user")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-        return user_id
+        return {"user_id": user_id, "role": role}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+async def verify_admin(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())) -> dict:
+    """Verify token AND check admin role"""
+    token_data = await verify_token(credentials)
+    if token_data["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return token_data
+
 # ============ Authentication Routes ============
 
-@app.post("/api/auth/register", response_model=dict)
+@app.post("/api/auth/register")
 async def register(user: UserRegister):
-    """Register new user"""
+    """Register new user — status starts as 'pending'"""
     existing_user = await db.users.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -167,36 +180,89 @@ async def register(user: UserRegister):
         "email": user.email,
         "password": hash_password(user.password),
         "name": user.name,
+        "phone": user.phone,
+        "organization": user.organization,
+        "role": "user",
+        "status": "pending",  # Admin must approve
+        "tier": None,
         "created_at": datetime.utcnow(),
         "is_admin": False
     }
     
-    user_doc["_id"] = str(result.inserted_id)
+    result = await db.users.insert_one(user_doc)
     
     return {
-        "message": "User registered successfully",
+        "message": "Registration submitted! Please wait for admin approval.",
         "user_id": str(result.inserted_id)
     }
 
-@app.post("/api/auth/login", response_model=TokenResponse)
+@app.post("/api/auth/login")
 async def login(credentials: UserLogin):
-    """Login user and return tokens"""
+    """Login user and return tokens with role and status"""
     user = await db.users.find_one({"email": credentials.email})
     
     if not user or not verify_password(credentials.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    access_token = create_access_token(str(user["_id"]))
-    refresh_token = create_refresh_token(str(user["_id"]))
+    user_id = str(user["_id"])
+    role = user.get("role", "user")
+    user_status = user.get("status", "pending")
+    name = user.get("name", "")
+    
+    access_token = create_access_token(user_id, role)
+    refresh_token = create_refresh_token(user_id, role)
     
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "role": role,
+        "status": user_status,
+        "name": name,
+        "user_id": user_id
     }
 
-@app.post("/api/auth/refresh", response_model=TokenResponse)
+@app.get("/api/auth/me")
+async def get_current_user(token_data: dict = Depends(verify_token)):
+    """Get current user info"""
+    user = await db.users.find_one({"_id": ObjectId(token_data["user_id"])})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if user has a member record
+    member = await db.members.find_one({"user_id": token_data["user_id"]})
+    
+    # Check if payment is done
+    has_paid = False
+    member_id = None
+    if member:
+        member_id = str(member["_id"])
+        payment = await db.payments.find_one({"member_id": member_id, "status": "completed"})
+        has_paid = payment is not None
+    
+    # Check if certificate exists
+    has_certificate = False
+    if member_id:
+        cert = await db.certificates.find_one({"member_id": member_id})
+        has_certificate = cert is not None
+    
+    return {
+        "user_id": str(user["_id"]),
+        "email": user["email"],
+        "name": user.get("name", ""),
+        "phone": user.get("phone"),
+        "organization": user.get("organization"),
+        "role": user.get("role", "user"),
+        "status": user.get("status", "pending"),
+        "tier": user.get("tier"),
+        "member_id": member_id,
+        "has_paid": has_paid,
+        "has_certificate": has_certificate
+    }
+
+@app.post("/api/auth/refresh")
 async def refresh(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
-    """Refresh access token using refresh token"""
+    """Refresh access token"""
     token = credentials.credentials
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
@@ -204,19 +270,148 @@ async def refresh(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer
             raise HTTPException(status_code=401, detail="Invalid token type")
         
         user_id = payload.get("sub")
-        access_token = create_access_token(user_id)
-        refresh_token = create_refresh_token(user_id)
+        role = payload.get("role", "user")
+        access_token = create_access_token(user_id, role)
+        refresh_token = create_refresh_token(user_id, role)
         
         return {
             "access_token": access_token,
-            "refresh_token": refresh_token
+            "refresh_token": refresh_token,
+            "token_type": "bearer"
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
 
+# ============ Admin Routes ============
+
+@app.get("/api/admin/pending-users")
+async def get_pending_users(token_data: dict = Depends(verify_admin)):
+    """Get all pending user registrations"""
+    users = await db.users.find({"status": "pending", "role": "user"}).to_list(100)
+    return [{
+        "user_id": str(u["_id"]),
+        "name": u.get("name", ""),
+        "email": u["email"],
+        "phone": u.get("phone"),
+        "organization": u.get("organization"),
+        "created_at": u.get("created_at"),
+    } for u in users]
+
+@app.get("/api/admin/all-users")
+async def get_all_users(token_data: dict = Depends(verify_admin)):
+    """Get all users (non-admin)"""
+    users = await db.users.find({"role": "user"}).to_list(200)
+    result = []
+    for u in users:
+        user_id = str(u["_id"])
+        member = await db.members.find_one({"user_id": user_id})
+        has_paid = False
+        if member:
+            payment = await db.payments.find_one({"member_id": str(member["_id"]), "status": "completed"})
+            has_paid = payment is not None
+        
+        result.append({
+            "user_id": user_id,
+            "name": u.get("name", ""),
+            "email": u["email"],
+            "phone": u.get("phone"),
+            "organization": u.get("organization"),
+            "status": u.get("status", "pending"),
+            "tier": u.get("tier"),
+            "has_paid": has_paid,
+            "created_at": u.get("created_at"),
+        })
+    return result
+
+@app.post("/api/admin/approve/{user_id}")
+async def approve_user(user_id: str, tier: str = "basic", token_data: dict = Depends(verify_admin)):
+    """Approve a pending user and auto-create their member record"""
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.get("status") == "approved":
+        raise HTTPException(status_code=400, detail="User already approved")
+    
+    # Update user status
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"status": "approved", "tier": tier}}
+    )
+    
+    # Auto-create member record
+    existing_member = await db.members.find_one({"user_id": user_id})
+    if not existing_member:
+        member_doc = {
+            "user_id": user_id,
+            "name": user.get("name", ""),
+            "email": user["email"],
+            "phone": user.get("phone"),
+            "tier": tier,
+            "organization": user.get("organization"),
+            "status": "active",
+            "joined_date": datetime.utcnow(),
+            "tier_expiry_date": datetime.utcnow() + timedelta(days=30),
+            "certificate_issued": False,
+            "created_at": datetime.utcnow()
+        }
+        await db.members.insert_one(member_doc)
+    
+    return {"message": f"User {user.get('name', '')} approved and member created"}
+
+@app.post("/api/admin/reject/{user_id}")
+async def reject_user(user_id: str, token_data: dict = Depends(verify_admin)):
+    """Reject a pending user"""
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"status": "rejected"}}
+    )
+    
+    return {"message": f"User {user.get('name', '')} rejected"}
+
+@app.get("/api/admin/analytics")
+async def get_admin_analytics(token_data: dict = Depends(verify_admin)):
+    """Get admin dashboard analytics"""
+    total_users = await db.users.count_documents({"role": "user"})
+    pending_users = await db.users.count_documents({"status": "pending", "role": "user"})
+    approved_users = await db.users.count_documents({"status": "approved", "role": "user"})
+    rejected_users = await db.users.count_documents({"status": "rejected", "role": "user"})
+    
+    total_members = await db.members.count_documents({})
+    active_members = await db.members.count_documents({"status": "active"})
+    
+    tier_basic = await db.members.count_documents({"tier": "basic"})
+    tier_premium = await db.members.count_documents({"tier": "premium"})
+    tier_gold = await db.members.count_documents({"tier": "gold"})
+    
+    payments = await db.payments.find({"status": "completed"}).to_list(None)
+    total_revenue = sum(p.get("amount", 0) for p in payments)
+    
+    certificates_issued = await db.certificates.count_documents({})
+    
+    return {
+        "total_users": total_users,
+        "pending_users": pending_users,
+        "approved_users": approved_users,
+        "rejected_users": rejected_users,
+        "total_members": total_members,
+        "active_members": active_members,
+        "tier_distribution": {
+            "basic": tier_basic,
+            "premium": tier_premium,
+            "gold": tier_gold
+        },
+        "total_revenue": total_revenue,
+        "certificates_issued": certificates_issued
+    }
+
 # ============ Membership Routes ============
 
-@app.get("/api/membership/tiers", response_model=List[dict])
+@app.get("/api/membership/tiers")
 async def get_membership_tiers():
     """Get all membership tiers"""
     tiers = [
@@ -244,35 +439,9 @@ async def get_membership_tiers():
     ]
     return tiers
 
-@app.post("/api/members/create")
-async def create_member(member: MemberCreate, user_id: str = Depends(verify_token)):
-    """Create new member"""
-    member_doc = {
-        "user_id": user_id,
-        "name": member.name,
-        "email": member.email,
-        "phone": member.phone,
-        "tier": member.tier,
-        "organization": member.organization,
-        "status": "active",
-        "joined_date": datetime.utcnow(),
-        "tier_expiry_date": datetime.utcnow() + timedelta(days=30),
-        "certificate_issued": False,
-        "created_at": datetime.utcnow()
-    }
-    
-    result = await db.members.insert_one(member_doc)
-    
-    return {
-        "message": "Member created successfully",
-        "member_id": str(result.inserted_id)
-    }
-
 @app.get("/api/members/{member_id}")
-async def get_member(member_id: str, user_id: str = Depends(verify_token)):
+async def get_member(member_id: str, token_data: dict = Depends(verify_token)):
     """Get member details"""
-    from bson import ObjectId
-    
     member = await db.members.find_one({"_id": ObjectId(member_id)})
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -281,51 +450,134 @@ async def get_member(member_id: str, user_id: str = Depends(verify_token)):
     del member["_id"]
     return member
 
-@app.get("/api/members", response_model=List[dict])
-async def list_members(user_id: str = Depends(verify_token)):
-    """List all members for current user"""
-    members = await db.members.find({"user_id": user_id}).to_list(100)
+@app.get("/api/members")
+async def list_members(token_data: dict = Depends(verify_token)):
+    """List all members — admin sees all, user sees own"""
+    if token_data["role"] == "admin":
+        members = await db.members.find({}).to_list(200)
+    else:
+        members = await db.members.find({"user_id": token_data["user_id"]}).to_list(100)
     return [{"member_id": str(m["_id"]), **{k: v for k, v in m.items() if k != "_id"}} for m in members]
 
-@app.post("/api/members/{member_id}/upgrade-tier")
-async def upgrade_tier(member_id: str, new_tier: str, user_id: str = Depends(verify_token)):
-    """Upgrade member tier"""
-    from bson import ObjectId
+
+@app.post("/api/admin/add-member")
+async def admin_add_member(member: UserRegister, tier: str = "basic", token_data: dict = Depends(verify_admin)):
+    """Admin manually adds a member — creates user (approved) + member record"""
+    # Check if email already exists
+    existing = await db.users.find_one({"email": member.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-    result = await db.members.update_one(
-        {"_id": ObjectId(member_id)},
-        {"$set": {"tier": new_tier, "tier_expiry_date": datetime.utcnow() + timedelta(days=30)}}
-    )
+    # Create user account with 'approved' status
+    user_doc = {
+        "email": member.email,
+        "password": hash_password(member.password),
+        "name": member.name,
+        "phone": member.phone,
+        "organization": member.organization,
+        "role": "user",
+        "status": "approved",
+        "tier": tier,
+        "created_at": datetime.utcnow(),
+        "is_admin": False
+    }
+    user_result = await db.users.insert_one(user_doc)
+    user_id = str(user_result.inserted_id)
     
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Member not found")
+    # Create member record
+    member_doc = {
+        "user_id": user_id,
+        "name": member.name,
+        "email": member.email,
+        "phone": member.phone,
+        "tier": tier,
+        "organization": member.organization,
+        "status": "active",
+        "joined_date": datetime.utcnow(),
+        "tier_expiry_date": datetime.utcnow() + timedelta(days=30),
+        "certificate_issued": False,
+        "created_at": datetime.utcnow()
+    }
+    await db.members.insert_one(member_doc)
     
-    return {"message": "Tier upgraded successfully"}
+    return {"message": f"Member {member.name} added and can login immediately", "user_id": user_id}
 
 # ============ Payment Routes ============
 
 @app.post("/api/payments/create")
-async def create_payment(payment: Payment, user_id: str = Depends(verify_token)):
-    """Create payment record"""
+async def create_payment(payment: Payment, token_data: dict = Depends(verify_token)):
+    """Create payment — user must be approved"""
+    user_id = token_data["user_id"]
+    
+    # Verify user is approved
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
+    if not user or user.get("status") != "approved":
+        raise HTTPException(status_code=403, detail="User not approved for payment")
+    
+    # Find member record
+    member = await db.members.find_one({"user_id": user_id})
+    if not member:
+        raise HTTPException(status_code=404, detail="Member record not found")
+    
+    member_id = str(member["_id"])
+    
     payment_doc = {
-        "member_id": payment.member_id,
+        "member_id": member_id,
+        "user_id": user_id,
         "amount": payment.amount,
         "tier": payment.tier,
         "payment_method": payment.payment_method,
-        "status": "completed",  # In production, use actual payment gateway
+        "status": "completed",
         "transaction_id": payment.transaction_id,
         "created_at": datetime.utcnow()
     }
     
-    result = await db.payments.insert_one(payment_doc)
+    await db.payments.insert_one(payment_doc)
+    
+    # Update member tier
+    await db.members.update_one(
+        {"_id": member["_id"]},
+        {"$set": {
+            "tier": payment.tier,
+            "tier_expiry_date": datetime.utcnow() + timedelta(days=30)
+        }}
+    )
+    
+    # Update user tier
+    await db.users.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"tier": payment.tier}}
+    )
+    
+    # Auto-generate certificate after payment
+    certificate_url = f"/certificates/{member_id}.pdf"
+    cert_doc = {
+        "member_id": member_id,
+        "member_name": member["name"],
+        "tier": payment.tier,
+        "issue_date": datetime.utcnow(),
+        "certificate_url": certificate_url,
+        "created_at": datetime.utcnow()
+    }
+    
+    # Remove old certificate if exists
+    await db.certificates.delete_many({"member_id": member_id})
+    await db.certificates.insert_one(cert_doc)
+    
+    # Update member certificate status
+    await db.members.update_one(
+        {"_id": member["_id"]},
+        {"$set": {"certificate_issued": True, "certificate_url": certificate_url}}
+    )
     
     return {
-        "message": "Payment recorded successfully",
+        "message": "Payment completed and certificate generated!",
+        "member_id": member_id,
         "transaction_id": payment.transaction_id
     }
 
 @app.get("/api/payments/{member_id}")
-async def get_payment_history(member_id: str, user_id: str = Depends(verify_token)):
+async def get_payment_history(member_id: str, token_data: dict = Depends(verify_token)):
     """Get payment history for member"""
     payments = await db.payments.find({"member_id": member_id}).to_list(100)
     for p in payments:
@@ -334,42 +586,8 @@ async def get_payment_history(member_id: str, user_id: str = Depends(verify_toke
 
 # ============ Certificate Routes ============
 
-@app.post("/api/certificates/generate")
-async def generate_certificate(member_id: str, user_id: str = Depends(verify_token)):
-    """Generate certificate for member (auto-generated)"""
-    from bson import ObjectId
-    
-    member = await db.members.find_one({"_id": ObjectId(member_id)})
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found")
-    
-    # In production, generate actual PDF
-    certificate_url = f"/certificates/{member_id}.pdf"
-    
-    cert_doc = {
-        "member_id": member_id,
-        "member_name": member["name"],
-        "tier": member["tier"],
-        "issue_date": datetime.utcnow(),
-        "certificate_url": certificate_url,
-        "created_at": datetime.utcnow()
-    }
-    
-    result = await db.certificates.insert_one(cert_doc)
-    
-    # Update member certificate status
-    await db.members.update_one(
-        {"_id": ObjectId(member_id)},
-        {"$set": {"certificate_issued": True, "certificate_url": certificate_url}}
-    )
-    
-    return {
-        "message": "Certificate generated successfully",
-        "certificate_url": certificate_url
-    }
-
 @app.get("/api/certificates/{member_id}")
-async def get_certificate(member_id: str, user_id: str = Depends(verify_token)):
+async def get_certificate(member_id: str, token_data: dict = Depends(verify_token)):
     """Get certificate for member"""
     certificate = await db.certificates.find_one({"member_id": member_id})
     if not certificate:
@@ -377,35 +595,6 @@ async def get_certificate(member_id: str, user_id: str = Depends(verify_token)):
     
     certificate["_id"] = str(certificate["_id"])
     return certificate
-
-# ============ Analytics Routes ============
-
-@app.get("/api/analytics/dashboard")
-async def get_dashboard_analytics(user_id: str = Depends(verify_token)):
-    """Get dashboard analytics"""
-    total_members = await db.members.count_documents({"user_id": user_id})
-    active_members = await db.members.count_documents({"user_id": user_id, "status": "active"})
-    
-    # Tier distribution
-    tier_basic = await db.members.count_documents({"user_id": user_id, "tier": "basic"})
-    tier_premium = await db.members.count_documents({"user_id": user_id, "tier": "premium"})
-    tier_gold = await db.members.count_documents({"user_id": user_id, "tier": "gold"})
-    
-    # Revenue (sum of all payments)
-    payments = await db.payments.find({"status": "completed"}).to_list(None)
-    total_revenue = sum(p.get("amount", 0) for p in payments)
-    
-    return {
-        "total_members": total_members,
-        "active_members": active_members,
-        "tier_distribution": {
-            "basic": tier_basic,
-            "premium": tier_premium,
-            "gold": tier_gold
-        },
-        "total_revenue": total_revenue,
-        "certificates_issued": await db.certificates.count_documents({})
-    }
 
 # ============ Health Check ============
 
@@ -415,7 +604,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow(),
-        "version": "1.0.0"
+        "version": "2.0.0"
     }
 
 if __name__ == "__main__":

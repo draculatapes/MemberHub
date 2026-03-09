@@ -6,7 +6,8 @@ import './App.css';
 // Pages
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import DashboardPage from './pages/DashboardPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
+import UserDashboardPage from './pages/UserDashboardPage';
 import MembersPage from './pages/MembersPage';
 import MemberDetailPage from './pages/MemberDetailPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -16,6 +17,7 @@ import CertificatePage from './pages/CertificatePage';
 // Components
 import Navbar from './components/Navbar';
 import PrivateRoute from './components/PrivateRoute';
+import AdminRoute from './components/AdminRoute';
 
 // Configure axios
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -23,22 +25,24 @@ axios.defaults.baseURL = API_BASE_URL;
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('access_token'));
-  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
       setIsAuthenticated(true);
-      // Fetch user data if needed
     }
   }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('user_status');
+    localStorage.removeItem('user_name');
     setIsAuthenticated(false);
-    setUser(null);
   };
+
+  const userRole = localStorage.getItem('user_role');
 
   return (
     <Router>
@@ -54,16 +58,24 @@ function App() {
         <Route
           path="/register"
           element={
-            isAuthenticated ? <Navigate to="/dashboard" /> : <RegisterPage setIsAuthenticated={setIsAuthenticated} />
+            isAuthenticated ? <Navigate to="/dashboard" /> : <RegisterPage />
           }
         />
 
         {/* Protected Routes */}
         <Route path="/" element={<PrivateRoute isAuthenticated={isAuthenticated} />}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/members" element={<MembersPage />} />
-          <Route path="/members/:id" element={<MemberDetailPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
+          {/* Dashboard — role-based */}
+          <Route
+            path="/dashboard"
+            element={userRole === 'admin' ? <AdminDashboardPage /> : <UserDashboardPage />}
+          />
+
+          {/* Admin-only routes */}
+          <Route path="/members" element={<AdminRoute><MembersPage /></AdminRoute>} />
+          <Route path="/members/:id" element={<AdminRoute><MemberDetailPage /></AdminRoute>} />
+          <Route path="/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
+
+          {/* User routes */}
           <Route path="/payment/:memberId" element={<PaymentPage />} />
           <Route path="/certificate/:memberId" element={<CertificatePage />} />
         </Route>
