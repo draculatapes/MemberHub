@@ -1,65 +1,58 @@
+/* ============ Member Detail — Dark Premium ============ */
+
 .member-detail-container {
   max-width: 800px;
   margin: 0 auto;
-  padding: 40px 20px;
-}
-
-.btn-back {
-  background-color: #e9ecef;
-  color: #333;
-  padding: 10px 16px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  margin-bottom: 25px;
-  font-weight: 500;
-  transition: background-color 0.3s ease;
-}
-
-.btn-back:hover {
-  background-color: #dee2e6;
+  padding: 40px 24px;
+  animation: fadeIn 0.4s var(--ease) both;
 }
 
 .member-card {
-  background: white;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   padding: 40px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: var(--radius-md);
+  animation: fadeInUp 0.5s var(--ease) both;
 }
 
 .member-card h1 {
-  font-size: 32px;
-  color: #333;
-  margin-bottom: 30px;
+  font-size: 28px;
+  color: var(--text-primary);
+  margin-bottom: 32px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
 }
 
 .member-info {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 30px;
-  margin-bottom: 40px;
-  padding-bottom: 30px;
-  border-bottom: 2px solid #e9ecef;
+  gap: 28px;
+  margin-bottom: 36px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
 }
 
 .info-group {
   display: flex;
   flex-direction: column;
+  padding-left: 16px;
+  border-left: 2px solid var(--accent);
 }
 
 .info-group label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  color: #666;
+  color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.2px;
   margin-bottom: 8px;
 }
 
 .info-group p {
   font-size: 16px;
-  color: #333;
+  color: var(--text-primary);
   margin: 0;
+  font-weight: 500;
 }
 
 .member-actions {
@@ -71,52 +64,71 @@
 .member-actions button {
   padding: 12px 20px;
   font-weight: 600;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: none;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all var(--duration) var(--ease);
+  font-family: 'Inter', sans-serif;
 }
 
 .upgrade-tier {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 20px;
-  background-color: #f8f9fa;
-  border-radius: 5px;
+  gap: 12px;
+  padding: 24px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
 }
 
 .upgrade-tier label {
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.upgrade-tier select {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
 }
 
 .upgrade-tier button {
-  padding: 8px 16px;
-  background-color: #ffc107;
-  color: #333;
+  padding: 10px 20px;
+  background-color: var(--tier-premium);
+  color: #0a0a0f;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.3s ease;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  transition: all var(--duration) var(--ease);
 }
 
 .upgrade-tier button:hover {
-  background-color: #ffb300;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(255, 171, 0, 0.3);
 }
 
 @media (max-width: 768px) {
+  .member-detail-container {
+    padding: 24px 16px;
+  }
+
   .member-info {
     grid-template-columns: 1fr;
     gap: 20px;
   }
 
   .member-card {
-    padding: 25px;
+    padding: 28px 20px;
   }
 
   .member-card h1 {
-    font-size: 24px;
+    font-size: 22px;
   }
 }

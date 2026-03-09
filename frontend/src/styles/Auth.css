@@ -1,61 +1,119 @@
+/* ============ Auth Pages — Dark & Animated ============ */
+
 .auth-container {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-color: var(--bg-primary);
   padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Floating decorative orbs — CSS only, no gradients */
+.auth-container::before,
+.auth-container::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background-color: var(--accent-dim);
+  filter: blur(80px);
+  animation: floatOrb 8s ease-in-out infinite alternate;
+}
+
+.auth-container::before {
+  width: 300px;
+  height: 300px;
+  top: -100px;
+  right: -100px;
+}
+
+.auth-container::after {
+  width: 250px;
+  height: 250px;
+  bottom: -80px;
+  left: -80px;
+  animation-delay: -4s;
+}
+
+@keyframes floatOrb {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  100% {
+    transform: translate(30px, -30px) scale(1.1);
+  }
 }
 
 .auth-card {
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  padding: 40px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 48px 40px;
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
+  position: relative;
+  z-index: 1;
+  animation: scaleIn 0.5s var(--ease) both;
 }
 
 .auth-card h1 {
-  font-size: 32px;
-  color: #0066cc;
-  margin-bottom: 10px;
+  font-size: 28px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
   text-align: center;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.auth-card h1 span {
+  color: var(--accent);
 }
 
 .auth-card h2 {
-  font-size: 24px;
-  color: #333;
-  margin-bottom: 30px;
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
   text-align: center;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .auth-card form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 4px;
 }
 
 .auth-card button {
-  margin-top: 10px;
-  padding: 12px;
-  font-size: 16px;
+  margin-top: 12px;
+  padding: 14px;
+  font-size: 15px;
+  width: 100%;
 }
 
 .auth-footer {
   text-align: center;
-  margin-top: 20px;
-  color: #666;
+  margin-top: 24px;
+  color: var(--text-muted);
   font-size: 14px;
 }
 
 .auth-footer a {
-  color: #0066cc;
+  color: var(--accent);
   text-decoration: none;
   font-weight: 600;
+  transition: opacity var(--duration) var(--ease);
 }
 
 .auth-footer a:hover {
-  text-decoration: underline;
+  opacity: 0.8;
+}
+
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 32px 24px;
+  }
 }

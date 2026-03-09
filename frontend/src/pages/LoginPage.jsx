@@ -23,7 +23,7 @@ function LoginPage({ setIsAuthenticated }) {
 
       localStorage.setItem('access_token', response.data.access_token);
       localStorage.setItem('refresh_token', response.data.refresh_token);
-      
+
       setIsAuthenticated(true);
       navigate('/dashboard');
     } catch (err) {
@@ -36,8 +36,8 @@ function LoginPage({ setIsAuthenticated }) {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1>MemberHub</h1>
-        <h2>Login</h2>
+        <h1>Member<span>Hub</span></h1>
+        <h2>Sign in to your account</h2>
 
         {error && <div className="error-message">{error}</div>}
 

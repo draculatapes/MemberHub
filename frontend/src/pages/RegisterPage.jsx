@@ -43,7 +43,7 @@ function RegisterPage({ setIsAuthenticated }) {
 
       localStorage.setItem('access_token', loginResponse.data.access_token);
       localStorage.setItem('refresh_token', loginResponse.data.refresh_token);
-      
+
       setIsAuthenticated(true);
       navigate('/dashboard');
     } catch (err) {
@@ -56,8 +56,8 @@ function RegisterPage({ setIsAuthenticated }) {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1>MemberHub</h1>
-        <h2>Create Account</h2>
+        <h1>Member<span>Hub</span></h1>
+        <h2>Create your account</h2>
 
         {error && <div className="error-message">{error}</div>}
 
