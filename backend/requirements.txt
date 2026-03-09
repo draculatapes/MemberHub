@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+pydantic
+pydantic-extra-types
+python-dotenv
+pymongo
+motor
+pyjwt>=2.8.0
+bcrypt
+email-validator
+python-multipart
+certifi
