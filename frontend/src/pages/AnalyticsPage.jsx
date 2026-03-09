@@ -13,7 +13,7 @@ function AnalyticsPage() {
   const fetchAnalytics = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      const response = await axios.get('/api/analytics/dashboard', {
+      const response = await axios.get('/api/admin/analytics', {
         headers: { Authorization: `Bearer ${token}` },
       });
       setAnalytics(response.data);
@@ -63,8 +63,8 @@ function AnalyticsPage() {
             <span>Basic Tier</span>
             <span className="tier-count">{analytics?.tier_distribution?.basic || 0} members</span>
             <div className="tier-bar">
-              <div className="tier-fill basic" 
-                style={{width: `${Math.max(10, (analytics?.tier_distribution?.basic / Math.max(1, analytics?.total_members)) * 100) || 0}%`}}>
+              <div className="tier-fill basic"
+                style={{ width: `${Math.max(10, (analytics?.tier_distribution?.basic / Math.max(1, analytics?.total_members)) * 100) || 0}%` }}>
               </div>
             </div>
           </div>
@@ -73,8 +73,8 @@ function AnalyticsPage() {
             <span>Premium Tier</span>
             <span className="tier-count">{analytics?.tier_distribution?.premium || 0} members</span>
             <div className="tier-bar">
-              <div className="tier-fill premium" 
-                style={{width: `${Math.max(10, (analytics?.tier_distribution?.premium / Math.max(1, analytics?.total_members)) * 100) || 0}%`}}>
+              <div className="tier-fill premium"
+                style={{ width: `${Math.max(10, (analytics?.tier_distribution?.premium / Math.max(1, analytics?.total_members)) * 100) || 0}%` }}>
               </div>
             </div>
           </div>
@@ -83,8 +83,8 @@ function AnalyticsPage() {
             <span>Gold Tier</span>
             <span className="tier-count">{analytics?.tier_distribution?.gold || 0} members</span>
             <div className="tier-bar">
-              <div className="tier-fill gold" 
-                style={{width: `${Math.max(10, (analytics?.tier_distribution?.gold / Math.max(1, analytics?.total_members)) * 100) || 0}%`}}>
+              <div className="tier-fill gold"
+                style={{ width: `${Math.max(10, (analytics?.tier_distribution?.gold / Math.max(1, analytics?.total_members)) * 100) || 0}%` }}>
               </div>
             </div>
           </div>

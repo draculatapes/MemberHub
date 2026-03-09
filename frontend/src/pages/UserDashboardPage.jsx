@@ -184,6 +184,36 @@ function UserDashboardPage() {
                             </button>
                         </div>
                     </div>
+
+                    <div className="action-card">
+                        <h3>Upgrade Your Tier</h3>
+                        <p>Switch to a different membership tier.</p>
+                        <div className="tier-grid">
+                            {tiers.filter(t => t.tier_id !== userData?.tier).map(tier => (
+                                <div
+                                    key={tier.tier_id}
+                                    className={`tier-option ${selectedTier === tier.tier_id ? 'selected' : ''}`}
+                                    onClick={() => setSelectedTier(tier.tier_id)}
+                                >
+                                    <h4>{tier.name}</h4>
+                                    <div className="price">${tier.price}</div>
+                                    <ul>
+                                        {tier.benefits.map((b, i) => (
+                                            <li key={i}>{b}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            className="btn-primary"
+                            onClick={handlePayment}
+                            disabled={payLoading || selectedTier === userData?.tier}
+                            style={{ marginTop: '12px' }}
+                        >
+                            {payLoading ? 'Processing...' : `Upgrade & Pay $${tiers.find(t => t.tier_id === selectedTier)?.price || '0.00'}`}
+                        </button>
+                    </div>
                 </>
             )}
         </div>

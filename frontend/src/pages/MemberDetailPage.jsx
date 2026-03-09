@@ -104,28 +104,14 @@ function MemberDetailPage() {
         </div>
 
         <div className="member-actions">
-          <button
-            className="btn-primary"
-            onClick={handleGenerateCertificate}
-            disabled={member.certificate_issued}
-          >
-            {member.certificate_issued ? 'Certificate Issued' : 'Generate Certificate'}
-          </button>
-
-
-
-          <div className="upgrade-tier">
-            <label>Upgrade Tier:</label>
-            {member.tier !== 'basic' && (
-              <button onClick={() => handleUpgradeTier('basic')}>Basic</button>
-            )}
-            {member.tier !== 'premium' && (
-              <button onClick={() => handleUpgradeTier('premium')}>Premium</button>
-            )}
-            {member.tier !== 'gold' && (
-              <button onClick={() => handleUpgradeTier('gold')}>Gold</button>
-            )}
-          </div>
+          {member.certificate_issued && (
+            <button
+              className="btn-primary"
+              onClick={() => navigate(`/certificate/${member.member_id}`)}
+            >
+              View Certificate
+            </button>
+          )}
         </div>
       </div>
     </div>

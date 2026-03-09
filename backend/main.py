@@ -46,7 +46,15 @@ db: Optional[AsyncIOMotorDatabase] = None
 @app.on_event("startup")
 async def startup():
     global client, db
-    client = AsyncIOMotorClient(MONGO_URL, tlsCAFile=certifi.where())
+    client = AsyncIOMotorClient(
+        MONGO_URL,
+        tlsCAFile=certifi.where(),
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=10000,
+        socketTimeoutMS=10000,
+        retryWrites=True,
+        retryReads=True,
+    )
     db = client[DATABASE_NAME]
     print("✓ Connected to MongoDB")
     
